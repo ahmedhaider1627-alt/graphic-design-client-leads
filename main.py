@@ -12,13 +12,8 @@ from loguru import logger
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
-from config import Config
 from app import app, db
 from models.database import init_db
-from sources.twitter import TwitterScraper
-from sources.reddit import RedditScraper
-from sources.upwork import UpworkScraper
-from sources.fiverr import FiverrScraper
 from utils.logger import setup_logger
 
 # Setup logging
@@ -28,7 +23,6 @@ class LeadGeneratorEngine:
     """Main client lead generation engine"""
     
     def __init__(self):
-        self.config = Config()
         self.scrapers = {}
         self.scheduler = BackgroundScheduler()
         self.is_running = False
@@ -37,45 +31,53 @@ class LeadGeneratorEngine:
         with app.app_context():
             init_db()
             logger.info("Database initialized")
-        
-        # Initialize scrapers
-        self._init_scrapers()
+            self._init_scrapers()
     
     def _init_scrapers(self):
         """Initialize all available scrapers"""
+        from config import Config
+        
+        config = Config()
         logger.info("Initializing lead scrapers...")
         
-        if 'twitter' in self.config.ENABLED_SOURCES:
+        if 'twitter' in config.ENABLED_SOURCES:
             try:
+                from sources.twitter import TwitterScraper
                 self.scrapers['twitter'] = TwitterScraper()
                 logger.info("✓ Twitter scraper initialized")
             except Exception as e:
-                logger.warning(f"Could not initialize Twitter scraper: {str(e)}")
+                logger.warning(f"⚠️  Could not initialize Twitter scraper: {str(e)}")
         
-        if 'reddit' in self.config.ENABLED_SOURCES:
+        if 'reddit' in config.ENABLED_SOURCES:
             try:
+                from sources.reddit import RedditScraper
                 self.scrapers['reddit'] = RedditScraper()
                 logger.info("✓ Reddit scraper initialized")
             except Exception as e:
-                logger.warning(f"Could not initialize Reddit scraper: {str(e)}")
+                logger.warning(f"⚠️  Could not initialize Reddit scraper: {str(e)}")
         
-        if 'upwork' in self.config.ENABLED_SOURCES:
+        if 'upwork' in config.ENABLED_SOURCES:
             try:
+                from sources.upwork import UpworkScraper
                 self.scrapers['upwork'] = UpworkScraper()
                 logger.info("✓ Upwork scraper initialized")
             except Exception as e:
-                logger.warning(f"Could not initialize Upwork scraper: {str(e)}")
+                logger.warning(f"⚠️  Could not initialize Upwork scraper: {str(e)}")
         
-        if 'fiverr' in self.config.ENABLED_SOURCES:
+        if 'fiverr' in config.ENABLED_SOURCES:
             try:
+                from sources.fiverr import FiverrScraper
                 self.scrapers['fiverr'] = FiverrScraper()
                 logger.info("✓ Fiverr scraper initialized")
             except Exception as e:
-                logger.warning(f"Could not initialize Fiverr scraper: {str(e)}")
+                logger.warning(f"⚠️  Could not initialize Fiverr scraper: {str(e)}")
     
     def run_once(self):
         """Run lead generation once"""
         with app.app_context():
+            from config import Config
+            config = Config()
+            
             logger.info("=" * 60)
             logger.info(f"Starting lead generation cycle at {datetime.now()}")
             logger.info("=" * 60)
@@ -94,7 +96,7 @@ class LeadGeneratorEngine:
             
             logger.info(f"\n{'='*60}")
             logger.info(f"Cycle complete. Total prospects found: {total_prospects_found}")
-            logger.info(f"Next cycle in {self.config.CRAWL_INTERVAL} seconds")
+            logger.info(f"Next cycle in {config.CRAWL_INTERVAL} seconds ({config.CRAWL_INTERVAL/60:.0f} minutes)")
             logger.info(f"{'='*60}\n")
     
     def start(self):
@@ -104,24 +106,29 @@ class LeadGeneratorEngine:
             return
         
         self.is_running = True
-        logger.info("\n" + "="*60)
-        logger.info("🚀 GRAPHIC DESIGN CLIENT LEADS GENERATOR STARTED")
-        logger.info(f"Interval: {self.config.CRAWL_INTERVAL} seconds ({self.config.CRAWL_INTERVAL/60:.0f} minutes)")
-        logger.info(f"Min Budget: ${self.config.MIN_BUDGET}")
-        logger.info(f"Min Quality Score: {self.config.MIN_QUALITY_SCORE}")
-        logger.info(f"Max Results: {self.config.MAX_RESULTS}")
-        logger.info("="*60 + "\n")
         
-        # Run immediately
-        self.run_once()
-        
-        # Schedule recurring runs
-        self.scheduler.add_job(
-            self.run_once,
-            'interval',
-            seconds=self.config.CRAWL_INTERVAL,
-            id='lead_generation_cycle'
-        )
+        with app.app_context():
+            from config import Config
+            config = Config()
+            
+            logger.info("\n" + "="*60)
+            logger.info("🚀 GRAPHIC DESIGN CLIENT LEADS GENERATOR STARTED")
+            logger.info(f"Interval: {config.CRAWL_INTERVAL} seconds ({config.CRAWL_INTERVAL/60:.0f} minutes)")
+            logger.info(f"Min Budget: ${config.MIN_BUDGET}")
+            logger.info(f"Min Quality Score: {config.MIN_QUALITY_SCORE}")
+            logger.info(f"Max Results: {config.MAX_RESULTS}")
+            logger.info("="*60 + "\n")
+            
+            # Run immediately
+            self.run_once()
+            
+            # Schedule recurring runs
+            self.scheduler.add_job(
+                self.run_once,
+                'interval',
+                seconds=config.CRAWL_INTERVAL,
+                id='lead_generation_cycle'
+            )
         
         try:
             self.scheduler.start()
