@@ -26,57 +26,63 @@ class BaseScraper(ABC):
     
     def save_prospects(self, prospects):
         """Save prospects to database"""
-        new_count = 0
-        updated_count = 0
+        from app import app
         
-        for prospect_data in prospects:
+        with app.app_context():
+            new_count = 0
+            updated_count = 0
+            
+            for prospect_data in prospects:
+                try:
+                    # Check if prospect already exists
+                    existing = Prospect.query.filter_by(
+                        raw_source_url=prospect_data['raw_source_url']
+                    ).first()
+                    
+                    if existing:
+                        # Update existing prospect
+                        for key, value in prospect_data.items():
+                            if hasattr(existing, key):
+                                setattr(existing, key, value)
+                        existing.updated_date = datetime.utcnow()
+                        updated_count += 1
+                    else:
+                        # Create new prospect
+                        new_prospect = Prospect(**prospect_data)
+                        db.session.add(new_prospect)
+                        new_count += 1
+                except Exception as e:
+                    logger.error(f"Error saving prospect: {str(e)}")
+                    continue
+            
             try:
-                # Check if prospect already exists
-                existing = Prospect.query.filter_by(
-                    raw_source_url=prospect_data['raw_source_url']
-                ).first()
-                
-                if existing:
-                    # Update existing prospect
-                    for key, value in prospect_data.items():
-                        if hasattr(existing, key):
-                            setattr(existing, key, value)
-                    existing.updated_date = datetime.utcnow()
-                    updated_count += 1
-                else:
-                    # Create new prospect
-                    new_prospect = Prospect(**prospect_data)
-                    db.session.add(new_prospect)
-                    new_count += 1
+                db.session.commit()
+                logger.info(f"✓ Saved {new_count} new prospects, updated {updated_count} prospects")
             except Exception as e:
-                logger.error(f"Error saving prospect: {str(e)}")
-                continue
-        
-        try:
-            db.session.commit()
-            logger.info(f"Saved {new_count} new prospects, updated {updated_count} prospects")
-        except Exception as e:
-            logger.error(f"Error committing to database: {str(e)}")
-            db.session.rollback()
-        
-        return new_count, updated_count
+                logger.error(f"Error committing to database: {str(e)}")
+                db.session.rollback()
+            
+            return new_count, updated_count
     
     def log_crawl(self, status, prospects_found=0, prospects_new=0, prospects_updated=0, error=None, duration=0):
         """Log crawl activity"""
-        try:
-            log = CrawlLog(
-                source=self.source_name,
-                prospects_found=prospects_found,
-                prospects_new=prospects_new,
-                prospects_updated=prospects_updated,
-                status=status,
-                error_message=error,
-                duration_seconds=duration
-            )
-            db.session.add(log)
-            db.session.commit()
-        except Exception as e:
-            logger.error(f"Error logging crawl: {str(e)}")
+        from app import app
+        
+        with app.app_context():
+            try:
+                log = CrawlLog(
+                    source=self.source_name,
+                    prospects_found=prospects_found,
+                    prospects_new=prospects_new,
+                    prospects_updated=prospects_updated,
+                    status=status,
+                    error_message=error,
+                    duration_seconds=duration
+                )
+                db.session.add(log)
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Error logging crawl: {str(e)}")
     
     def get_request(self, url, **kwargs):
         """Make GET request with error handling"""
