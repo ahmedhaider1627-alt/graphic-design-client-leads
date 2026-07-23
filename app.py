@@ -5,7 +5,6 @@ Flask web application for viewing and managing design client leads
 
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-from config import Config
 from models.database import db, Prospect, CrawlLog, ContactAttempt
 from sqlalchemy import func
 from datetime import datetime, timedelta
@@ -13,6 +12,9 @@ import csv
 from io import StringIO
 
 app = Flask(__name__)
+
+# Load config after app is created
+from config import Config
 config = Config()
 app.config.from_object(config)
 
