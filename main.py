@@ -5,6 +5,7 @@ Main entry point for finding businesses needing design services
 """
 
 import sys
+import os
 import time
 from pathlib import Path
 from loguru import logger
@@ -12,6 +13,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
 from config import Config
+from app import app, db
 from models.database import init_db
 from sources.twitter import TwitterScraper
 from sources.reddit import RedditScraper
@@ -31,9 +33,10 @@ class LeadGeneratorEngine:
         self.scheduler = BackgroundScheduler()
         self.is_running = False
         
-        # Initialize database
-        init_db()
-        logger.info("Database initialized")
+        # Initialize database with app context
+        with app.app_context():
+            init_db()
+            logger.info("Database initialized")
         
         # Initialize scrapers
         self._init_scrapers()
@@ -43,43 +46,56 @@ class LeadGeneratorEngine:
         logger.info("Initializing lead scrapers...")
         
         if 'twitter' in self.config.ENABLED_SOURCES:
-            self.scrapers['twitter'] = TwitterScraper()
-            logger.info("✓ Twitter scraper initialized")
+            try:
+                self.scrapers['twitter'] = TwitterScraper()
+                logger.info("✓ Twitter scraper initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize Twitter scraper: {str(e)}")
         
         if 'reddit' in self.config.ENABLED_SOURCES:
-            self.scrapers['reddit'] = RedditScraper()
-            logger.info("✓ Reddit scraper initialized")
+            try:
+                self.scrapers['reddit'] = RedditScraper()
+                logger.info("✓ Reddit scraper initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize Reddit scraper: {str(e)}")
         
         if 'upwork' in self.config.ENABLED_SOURCES:
-            self.scrapers['upwork'] = UpworkScraper()
-            logger.info("✓ Upwork scraper initialized")
+            try:
+                self.scrapers['upwork'] = UpworkScraper()
+                logger.info("✓ Upwork scraper initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize Upwork scraper: {str(e)}")
         
         if 'fiverr' in self.config.ENABLED_SOURCES:
-            self.scrapers['fiverr'] = FiverrScraper()
-            logger.info("✓ Fiverr scraper initialized")
+            try:
+                self.scrapers['fiverr'] = FiverrScraper()
+                logger.info("✓ Fiverr scraper initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize Fiverr scraper: {str(e)}")
     
     def run_once(self):
         """Run lead generation once"""
-        logger.info("=" * 60)
-        logger.info(f"Starting lead generation cycle at {datetime.now()}")
-        logger.info("=" * 60)
-        
-        total_prospects_found = 0
-        
-        for source_name, scraper in self.scrapers.items():
-            try:
-                logger.info(f"\n🔍 Scraping {source_name.upper()}...")
-                prospects = scraper.scrape()
-                total_prospects_found += len(prospects)
-                logger.info(f"✓ Found {len(prospects)} prospects from {source_name}")
-            except Exception as e:
-                logger.error(f"✗ Error scraping {source_name}: {str(e)}")
-                continue
-        
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Cycle complete. Total prospects found: {total_prospects_found}")
-        logger.info(f"Next cycle in {self.config.CRAWL_INTERVAL} seconds")
-        logger.info(f"{'='*60}\n")
+        with app.app_context():
+            logger.info("=" * 60)
+            logger.info(f"Starting lead generation cycle at {datetime.now()}")
+            logger.info("=" * 60)
+            
+            total_prospects_found = 0
+            
+            for source_name, scraper in self.scrapers.items():
+                try:
+                    logger.info(f"\n🔍 Scraping {source_name.upper()}...")
+                    prospects = scraper.scrape()
+                    total_prospects_found += len(prospects)
+                    logger.info(f"✓ Found {len(prospects)} prospects from {source_name}")
+                except Exception as e:
+                    logger.error(f"✗ Error scraping {source_name}: {str(e)}")
+                    continue
+            
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Cycle complete. Total prospects found: {total_prospects_found}")
+            logger.info(f"Next cycle in {self.config.CRAWL_INTERVAL} seconds")
+            logger.info(f"{'='*60}\n")
     
     def start(self):
         """Start the lead generation engine"""
@@ -90,7 +106,7 @@ class LeadGeneratorEngine:
         self.is_running = True
         logger.info("\n" + "="*60)
         logger.info("🚀 GRAPHIC DESIGN CLIENT LEADS GENERATOR STARTED")
-        logger.info(f"Interval: {self.config.CRAWL_INTERVAL} seconds")
+        logger.info(f"Interval: {self.config.CRAWL_INTERVAL} seconds ({self.config.CRAWL_INTERVAL/60:.0f} minutes)")
         logger.info(f"Min Budget: ${self.config.MIN_BUDGET}")
         logger.info(f"Min Quality Score: {self.config.MIN_QUALITY_SCORE}")
         logger.info(f"Max Results: {self.config.MAX_RESULTS}")
@@ -109,7 +125,8 @@ class LeadGeneratorEngine:
         
         try:
             self.scheduler.start()
-            logger.info("Scheduler started. Press Ctrl+C to stop.")
+            logger.info("✓ Scheduler started. Press Ctrl+C to stop.")
+            logger.info(f"📊 Dashboard: http://localhost:5000")
             
             # Keep running
             while True:
@@ -125,13 +142,12 @@ class LeadGeneratorEngine:
         
         self.scheduler.shutdown()
         self.is_running = False
-        logger.info("Engine stopped.")
+        logger.info("✓ Engine stopped.")
 
 def main():
     """Main entry point"""
-    engine = LeadGeneratorEngine()
-    
     try:
+        engine = LeadGeneratorEngine()
         engine.start()
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}", exc_info=True)
